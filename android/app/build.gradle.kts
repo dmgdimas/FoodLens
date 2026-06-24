@@ -65,4 +65,5 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraxVersion")
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.navigation:navigation-compose:2.8.0")
+    implementation("androidx.compose.material:material-icons-extended")
 }
