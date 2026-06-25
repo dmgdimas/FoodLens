@@ -1,0 +1,73 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: foodlens_backend
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_PORT: ${APP_PORT:-8000}
+
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-foodlens}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-foodlens_password}
+      DB_NAME: ${POSTGRES_DB:-foodlens}
+      DB_SSLMODE: disable
+
+      ML_SERVICE_URL: http://ml-service:9000
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_started
+    networks:
+      - foodlens_network
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: foodlens_ml_service
+    restart: unless-stopped
+    ports:
+      - "${ML_SERVICE_PORT:-9000}:9000"
+    environment:
+      ML_SERVICE_PORT: 9000
+      MODEL_PATH: /app/weights/best.pt
+    volumes:
+      - ./ml-service:/app
+    networks:
+      - foodlens_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: foodlens_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-foodlens}
+      POSTGRES_USER: ${POSTGRES_USER:-foodlens}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-foodlens_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - foodlens_postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-foodlens} -d ${POSTGRES_DB:-foodlens}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - foodlens_network
+
+volumes:
+  foodlens_postgres_data:
+
+networks:
+  foodlens_network:
+    driver: bridge
