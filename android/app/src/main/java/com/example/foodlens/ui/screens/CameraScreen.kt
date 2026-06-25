@@ -1,15 +1,24 @@
 package com.example.foodlens.ui.screens
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
+import android.util.Log
+import android.widget.Toast
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import com.example.foodlens.camera.CameraCapture
 
 @Composable
 fun CameraScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text = "Здесь будет видоискатель камеры")
-    }
+    val context = LocalContext.current
+
+    CameraCapture(
+        onImageCaptured = { uri ->
+            Log.d("CameraScreen", "Фото сохранено: $uri")
+            Toast.makeText(context, "Фото сохранено!", Toast.LENGTH_SHORT).show()
+            // Потом этот uri будет передаваться во viewmodel для отправки на сервер
+        },
+        onError = { exc ->
+            Log.e("CameraScreen", "Ошибка фото: ${exc.message}", exc)
+            Toast.makeText(context, "Ошибка съемки", Toast.LENGTH_SHORT).show()
+        }
+    )
 }
