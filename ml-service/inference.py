@@ -7,7 +7,7 @@ from pathlib import Path
 
 # Абсолютный путь к модели
 PROJECT_ROOT = Path(__file__).resolve().parent
-MODEL_PATH = PROJECT_ROOT / "runs" / "segment" / "food_segmentation_test" / "weights" / "best.pt"
+MODEL_PATH = PROJECT_ROOT / "runs" / "segment" / "food_segmentation_augmented" / "weights" / "best.pt"
 
 # Допущения для расчета объема
 DISTANCE_CM = 20.0
@@ -18,10 +18,10 @@ PIXEL_TO_CM_RATIO = 30.0 / 640.0
 # Загружаем модель глобально при импорте модуля
 model = YOLO(str(MODEL_PATH))
 
-def calculate_volume(mask_area_px: int) -> float:
+def calculate_volume(mask_area_px: int, class_name: str = "unknown") -> float:
     """
     Вычисляет физический объем объекта в куб. см на основе площади пикселей маски.
-    Использует допущение Z=20 см и аппроксимацию до сферы.
+    Использует допущение Z=20 см и аппроксимацию до эллипсоида (сжатого шара).
     """
     # Физическая площадь в кв. см
     area_cm2 = mask_area_px * (PIXEL_TO_CM_RATIO ** 2)
@@ -29,13 +29,13 @@ def calculate_volume(mask_area_px: int) -> float:
     if area_cm2 <= 0:
         return 0.0
         
-    # Эквивалентный радиус проекции
+    # Эквивалентный радиус проекции (если смотреть сверху)
     radius_cm = math.sqrt(area_cm2 / math.pi)
     
-    # Объем шара: 4/3 * pi * R^3
     volume_cm3 = (4.0 / 3.0) * math.pi * (radius_cm ** 3)
+    flatness_factor = 0.6 
     
-    return round(volume_cm3, 2)
+    return round(volume_cm3 * flatness_factor, 2)
 
 def run_inference(image_path: str):
     """
@@ -71,14 +71,10 @@ def run_inference(image_path: str):
             # Маска для текущего объекта
             mask = masks[i].cpu().numpy()
             
-            # Площадь маски (количество пикселей со значением > 0)
-            # Примечание: маска YOLO может быть отскейлена, поэтому мы 
-            # вычисляем долю площади от всего размера и переводим в 640x640 масштаб
-            mask_ratio = np.sum(mask > 0.5) / (mask.shape[0] * mask.shape[1])
-            area_px_at_640 = mask_ratio * (640 * 640)
+            area_px = int(np.sum(mask > 0.5))
             
             # Вычисляем объем
-            volume_cm3 = calculate_volume(area_px_at_640)
+            volume_cm3 = calculate_volume(area_px, class_name)
             
             output_data.append({
                 "class": class_name,

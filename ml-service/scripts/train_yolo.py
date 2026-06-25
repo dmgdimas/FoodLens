@@ -17,28 +17,31 @@ def main():
         return
 
     # Загружаем базовую модель для сегментации (самую легкую)
-    model = YOLO("yolov8n-seg.pt")
+    model = YOLO("yolov8s-seg.pt")
 
     # Параметры обучения
-    # Для быстрой проверки делаем всего 1-2 эпохи. 
-    # В реальном пайплайне epochs=50..100
-    epochs = 2
+    epochs = 50  # Увеличено для полноценного обучения (было 2)
     imgsz = 640
     batch_size = 16
 
-    print("Начинаем обучение...")
+    print(f"Начинаем обучение на {epochs} эпох...")
+    
     results = model.train(
         data=str(DATA_YAML_PATH),
         epochs=epochs,
         imgsz=imgsz,
         batch=batch_size,
-        name="food_segmentation_test",
-        # Базовые аугментации YOLOv8 включены по умолчанию
-        # (hsv_h, hsv_s, hsv_v, degrees, translate, scale, shear, perspective, flipud, fliplr, mosaic, mixup)
-        # Можем немного усилить поворот:
-        degrees=15.0,
+        name="food_segmentation_augmented",
         project=str(PROJECT_ROOT / "runs" / "segment"),
-        device="0"  # Использование CUDA
+        device="0",  # Использование CUDA
+        
+        degrees=15.0,
+        hsv_s=0.5,
+        hsv_v=0.4,
+        copy_paste=0.3, 
+        mixup=0.2,
+        mosaic=1.0,
+        verbose=True
     )
 
     print("Обучение завершено. Результаты сохранены в runs/segment/food_segmentation_test")
