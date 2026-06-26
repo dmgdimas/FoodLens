@@ -30,7 +30,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error)
 
 	productRepository := product.NewRepository(db)
 
-	router := httpserver.NewRouter(log)
+	router := httpserver.NewRouter(log, productRepository)
 
 	server := &http.Server{
 		Addr:              cfg.Addr(),

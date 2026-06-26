@@ -3,30 +3,25 @@ package httpserver
 import (
 	"log/slog"
 	"net/http"
+
+	"github.com/dmgdimas/FoodLens/backend/internal/product"
 )
 
-func NewRouter(log *slog.Logger) http.Handler {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/health", healthHandler)
-
-	return loggingMiddleware(log, mux)
+type Handler struct {
+	log      *slog.Logger
+	products *product.Repository
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
-			"status": "error",
-			"error": map[string]any{
-				"code":    "METHOD_NOT_ALLOWED",
-				"message": "Method is not allowed",
-			},
-		})
-		return
+func NewRouter(log *slog.Logger, productRepository *product.Repository) http.Handler {
+	handler := &Handler{
+		log:      log,
+		products: productRepository,
 	}
 
-	writeJSON(w, http.StatusOK, HealthResponse{
-		Status: "ok",
-	})
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/health", handler.healthHandler)
+	mux.HandleFunc("/api/v1/products", handler.productsHandler)
+
+	return loggingMiddleware(log, mux)
 }
