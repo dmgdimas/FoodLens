@@ -1,21 +1,31 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/dmgdimas/FoodLens/backend/internal/config"
+	"github.com/dmgdimas/FoodLens/backend/internal/database"
 	"github.com/dmgdimas/FoodLens/backend/internal/httpserver"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type App struct {
 	cfg    config.Config
 	log    *slog.Logger
+	db     *pgxpool.Pool
 	server *http.Server
 }
 
-func New(cfg config.Config, log *slog.Logger) *App {
+func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error) {
+	db, err := database.NewPostgresPool(ctx, cfg.DatabaseDSN())
+	if err != nil {
+		return nil, err
+	}
+
 	router := httpserver.NewRouter(log)
 
 	server := &http.Server{
@@ -30,8 +40,9 @@ func New(cfg config.Config, log *slog.Logger) *App {
 	return &App{
 		cfg:    cfg,
 		log:    log,
+		db:     db,
 		server: server,
-	}
+	}, nil
 }
 
 func (a *App) Run() error {
@@ -41,5 +52,17 @@ func (a *App) Run() error {
 		"env", a.cfg.AppEnv,
 	)
 
-	return a.server.ListenAndServe()
+	err := a.server.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+
+	return err
+}
+
+func (a *App) Close() {
+	if a.db != nil {
+		a.db.Close()
+		a.log.Info("PostgreSQL connection pool closed")
+	}
 }
