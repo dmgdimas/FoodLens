@@ -1,80 +1,100 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
-import json
 import math
 from pathlib import Path
 
 # Абсолютный путь к модели
 PROJECT_ROOT = Path(__file__).resolve().parent
-MODEL_PATH = PROJECT_ROOT / "runs" / "segment" / "food_segmentation_augmented" / "weights" / "best.pt"
+MODEL_PATH = PROJECT_ROOT / "runs" / "segment" / "food_segmentation_augmented-5" / "weights" / "best.pt"
 
-# Допущения для расчета объема
-DISTANCE_CM = 20.0
-# Допустим, на расстоянии 20 см картинка 640x640 пикселей охватывает область 30x30 см.
-# Значит, 1 пиксель = 30 / 640 = 0.046875 см
-PIXEL_TO_CM_RATIO = 30.0 / 640.0
+# Загружаем модель глобально
+model = None
+if MODEL_PATH.exists():
+    model = YOLO(str(MODEL_PATH))
 
-# Загружаем модель глобально при импорте модуля
-model = YOLO(str(MODEL_PATH))
+def get_model():
+    global model
+    if model is None:
+        if not MODEL_PATH.exists():
+            raise FileNotFoundError(f"Модель не найдена по пути: {MODEL_PATH}. Сначала запустите обучение.")
+        model = YOLO(str(MODEL_PATH))
+    return model
 
-def calculate_volume(mask_area_px: int, class_name: str = "unknown") -> float:
+def calculate_volume(mask: np.ndarray, depth_map: np.ndarray, intrinsics: dict) -> float:
     """
-    Вычисляет физический объем объекта в куб. см на основе площади пикселей маски.
-    Использует допущение Z=20 см и аппроксимацию до эллипсоида (сжатого шара).
-    """
-    # Физическая площадь в кв. см
-    area_cm2 = mask_area_px * (PIXEL_TO_CM_RATIO ** 2)
+    Вычисляет физический объем объекта в куб. см на основе карты глубин и маски.
     
-    if area_cm2 <= 0:
-        return 0.0
+    mask: бинарная маска (H, W) со значениями 0 и 1 (размер совпадает с depth_map)
+    depth_map: карта глубин (H, W) со значениями глубины (предполагаем, что значения уже в сантиметрах)
+    intrinsics: dict с fx, fy, cx, cy
+    """
+    fx = float(intrinsics.get("fx", 500.0))
+    fy = float(intrinsics.get("fy", 500.0))
+    
+    kernel = np.ones((15, 15), np.uint8)
+    dilated_mask = cv2.dilate(mask.astype(np.uint8), kernel, iterations=1)
+    border_mask = dilated_mask - mask
+    
+    border_depths = depth_map[border_mask > 0.5]
+    if len(border_depths) > 0:
+        table_z = np.median(border_depths)
+    else:
+        mask_depths = depth_map[mask > 0.5]
+        table_z = np.max(mask_depths) if len(mask_depths) > 0 else 0
         
-    # Эквивалентный радиус проекции (если смотреть сверху)
-    radius_cm = math.sqrt(area_cm2 / math.pi)
-    
-    volume_cm3 = (4.0 / 3.0) * math.pi * (radius_cm ** 3)
-    flatness_factor = 0.6 
-    
-    return round(volume_cm3 * flatness_factor, 2)
+    if table_z <= 0:
+        return 0.0
 
-def run_inference(image_path: str):
-    """
-    Прогоняет картинку через YOLO-Seg, считает объем и возвращает JSON.
-    """
-    img = cv2.imread(image_path)
-    if img is None:
-        raise ValueError(f"Не удалось прочитать изображение: {image_path}")
+    volume_cm3 = 0.0
+    ys, xs = np.where(mask > 0.5)
+    
+    for y, x in zip(ys, xs):
+        z = depth_map[y, x]
+        if z <= 0:
+            continue
+            
+        height = max(0, table_z - z)
+        
+        if height > 0:
+            pixel_area = (z / fx) * (z / fy)
+            volume_cm3 += pixel_area * height
+            
+    return round(volume_cm3, 2)
 
-    # Инференс модели (сразу делаем ресайз до 640)
-    results = model(img, imgsz=640)
+def process_inference(image: np.ndarray, depth_map: np.ndarray, intrinsics: dict):
+    """
+    Прогоняет картинку через YOLO-Seg, считает объем по Depth Map и возвращает данные.
+    Ожидает, что image и depth_map имеют одинаковое разрешение.
+    """
+    m = get_model()
+    
+    results = m(image, imgsz=640)
     
     output_data = []
     
     for result in results:
-        # result.boxes содержит классы и уверенность
-        # result.masks содержит сами маски
-        if result.masks is None:
+        if result.masks is None or result.boxes is None:
             continue
             
         boxes = result.boxes
-        masks = result.masks.data  # Tensor (N, H, W)
+        names = m.names
         
-        # Получаем оригинальные размеры, чтобы знать масштаб маски
-        orig_shape = result.orig_shape
-        names = model.names
+        polygons = result.masks.xy 
         
         for i in range(len(boxes)):
             class_id = int(boxes.cls[i].item())
             class_name = names[class_id]
             confidence = float(boxes.conf[i].item())
             
-            # Маска для текущего объекта
-            mask = masks[i].cpu().numpy()
+            poly = polygons[i]
+            if len(poly) < 3:
+                continue
+                
+            mask = np.zeros(depth_map.shape[:2], dtype=np.uint8)
+            cv2.fillPoly(mask, [poly.astype(np.int32)], 1)
             
-            area_px = int(np.sum(mask > 0.5))
-            
-            # Вычисляем объем
-            volume_cm3 = calculate_volume(area_px, class_name)
+            volume_cm3 = calculate_volume(mask, depth_map, intrinsics)
             
             output_data.append({
                 "class": class_name,
@@ -82,12 +102,4 @@ def run_inference(image_path: str):
                 "volume_cm3": volume_cm3
             })
             
-    return json.dumps(output_data, indent=4, ensure_ascii=False)
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1:
-        img_path = sys.argv[1]
-        print(run_inference(img_path))
-    else:
-        print("Использование: python inference.py <путь_к_картинке>")
+    return output_data
