@@ -1,30 +1,30 @@
 package main
 
 import (
-	"encoding/json"
-	"log"
-	"net/http"
+	"context"
+	"log/slog"
 	"os"
+
+	"github.com/dmgdimas/FoodLens/backend/internal/app"
+	"github.com/dmgdimas/FoodLens/backend/internal/config"
+	"github.com/dmgdimas/FoodLens/backend/internal/logger"
 )
 
-type HealthResponse struct {
-	Status string `json:"status"`
-}
-
 func main() {
-	port := os.Getenv("APP_PORT")
-	if port == "" {
-		port = "8000"
+	cfg := config.Load()
+	log := logger.New(slog.LevelInfo, os.Stdout)
+
+	ctx := context.Background()
+
+	application, err := app.New(ctx, cfg, log)
+	if err != nil {
+		log.Error("failed to initialize application", "error", err)
+		os.Exit(1)
 	}
+	defer application.Close()
 
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(HealthResponse{Status: "ok"})
-	})
-
-	log.Printf("FoodLens backend started on port %s", port)
-
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatal(err)
+	if err := application.Run(); err != nil {
+		log.Error("failed to run application", "error", err)
+		os.Exit(1)
 	}
 }
