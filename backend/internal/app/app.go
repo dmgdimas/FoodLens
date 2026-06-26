@@ -10,14 +10,16 @@ import (
 	"github.com/dmgdimas/FoodLens/backend/internal/config"
 	"github.com/dmgdimas/FoodLens/backend/internal/database"
 	"github.com/dmgdimas/FoodLens/backend/internal/httpserver"
+	"github.com/dmgdimas/FoodLens/backend/internal/product"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type App struct {
-	cfg    config.Config
-	log    *slog.Logger
-	db     *pgxpool.Pool
-	server *http.Server
+	cfg      config.Config
+	log      *slog.Logger
+	db       *pgxpool.Pool
+	products *product.Repository
+	server   *http.Server
 }
 
 func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error) {
@@ -25,6 +27,8 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error)
 	if err != nil {
 		return nil, err
 	}
+
+	productRepository := product.NewRepository(db)
 
 	router := httpserver.NewRouter(log)
 
@@ -38,10 +42,11 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error)
 	}
 
 	return &App{
-		cfg:    cfg,
-		log:    log,
-		db:     db,
-		server: server,
+		cfg:      cfg,
+		log:      log,
+		db:       db,
+		products: productRepository,
+		server:   server,
 	}, nil
 }
 
