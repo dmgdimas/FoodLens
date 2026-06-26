@@ -17,7 +17,7 @@ type Config struct {
 	MLServiceURL string
 }
 
-func LoadConfig() Config {
+func Load() Config {
 	return Config{
 		AppEnv:       getEnv("APP_ENV", "development"),
 		AppPort:      getEnv("APP_PORT", "8000"),
@@ -50,4 +50,8 @@ func getEnv(key string, defaultValue string) string {
 	}
 
 	return value
+}
+
+func (c Config) Addr() string {
+	return ":" + c.AppPort
 }
