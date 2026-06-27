@@ -98,18 +98,8 @@ func (h *Handler) calculateHandler(w http.ResponseWriter, r *http.Request) {
 
 	request.MLClass = strings.TrimSpace(request.MLClass)
 
-	if request.MLClass == "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "ml_class is required")
-		return
-	}
-
-	if request.WeightG == nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "weight_g is required")
-		return
-	}
-
-	if *request.WeightG <= 0 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "weight_g must be greater than zero")
+	if validationError := validateCalculateRequest(request); validationError != nil {
+		writeError(w, http.StatusBadRequest, validationError.Code, validationError.Message)
 		return
 	}
 
@@ -137,6 +127,36 @@ func (h *Handler) calculateHandler(w http.ResponseWriter, r *http.Request) {
 		EstimatedWeightG: *request.WeightG,
 		Nutrients:        nutrients,
 	})
+}
+
+type ValidationError struct {
+	Code    string
+	Message string
+}
+
+func validateCalculateRequest(request CalculateRequest) *ValidationError {
+	if request.MLClass == "" {
+		return &ValidationError{
+			Code:    "INVALID_INPUT",
+			Message: "ml_class is required",
+		}
+	}
+
+	if request.WeightG == nil {
+		return &ValidationError{
+			Code:    "INVALID_INPUT",
+			Message: "weight_g is required",
+		}
+	}
+
+	if *request.WeightG <= 0 {
+		return &ValidationError{
+			Code:    "INVALID_INPUT",
+			Message: "weight_g must be greater than zero",
+		}
+	}
+
+	return nil
 }
 
 func parseSupportedOnlyQuery(r *http.Request) (bool, bool) {
