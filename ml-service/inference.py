@@ -51,14 +51,13 @@ def calculate_volume(mask: np.ndarray, depth_map: np.ndarray, intrinsics: dict) 
     
     for y, x in zip(ys, xs):
         z = depth_map[y, x]
-        if z <= 0:
+        if z >= table_z:
             continue
             
-        height = max(0, table_z - z)
-        
-        if height > 0:
-            pixel_area = (z / fx) * (z / fy)
-            volume_cm3 += pixel_area * height
+        # Интегрируем точный объем усеченной пирамиды (frustum) для данного пикселя
+        # V = \int_{z}^{table_z} (z'^2 / (fx*fy)) dz' = (table_z^3 - z^3) / (3 * fx * fy)
+        exact_column_volume = (table_z**3 - z**3) / (3.0 * fx * fy)
+        volume_cm3 += exact_column_volume
             
     return round(volume_cm3, 2)
 
