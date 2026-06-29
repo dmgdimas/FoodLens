@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/dmgdimas/FoodLens/backend/internal/ml"
 	"github.com/dmgdimas/FoodLens/backend/internal/nutrition"
 	"github.com/dmgdimas/FoodLens/backend/internal/product"
 )
+
+const maxImageSizeBytes = 10 << 20
 
 type ProductsResponse struct {
 	Status   string            `json:"status"`
@@ -56,6 +59,11 @@ type DetectionResponse struct {
 	EstimatedVolumeCM3 float64             `json:"estimated_volume_cm3"`
 	EstimatedWeightG   float64             `json:"estimated_weight_g"`
 	Nutrients          nutrition.Nutrients `json:"nutrients"`
+}
+
+type ValidationError struct {
+	Code    string
+	Message string
 }
 
 func (h *Handler) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -153,8 +161,10 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_MULTIPART_FORM", "Request must be multipart/form-data")
+	r.Body = http.MaxBytesReader(w, r.Body, maxImageSizeBytes)
+
+	if err := r.ParseMultipartForm(maxImageSizeBytes); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_MULTIPART_FORM", "Request must be multipart/form-data with image up to 10 MB")
 		return
 	}
 
@@ -164,6 +174,11 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+
+	if validationError := validateImageFile(fileHeader.Filename, fileHeader.Size); validationError != nil {
+		writeError(w, http.StatusBadRequest, validationError.Code, validationError.Message)
+		return
+	}
 
 	mlResponse, err := h.mlClient.AnalyzeImage(r.Context(), file, fileHeader.Filename)
 	if err != nil {
@@ -212,11 +227,6 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type ValidationError struct {
-	Code    string
-	Message string
-}
-
 func validateCalculateRequest(request CalculateRequest) *ValidationError {
 	if request.MLClass == "" {
 		return &ValidationError{
@@ -240,6 +250,34 @@ func validateCalculateRequest(request CalculateRequest) *ValidationError {
 	}
 
 	return nil
+}
+
+func validateImageFile(filename string, size int64) *ValidationError {
+	if size <= 0 {
+		return &ValidationError{
+			Code:    "IMAGE_REQUIRED",
+			Message: "Image file is empty",
+		}
+	}
+
+	if size > maxImageSizeBytes {
+		return &ValidationError{
+			Code:    "IMAGE_TOO_LARGE",
+			Message: "Image size must be less than or equal to 10 MB",
+		}
+	}
+
+	extension := strings.ToLower(filepath.Ext(filename))
+
+	switch extension {
+	case ".jpg", ".jpeg", ".png":
+		return nil
+	default:
+		return &ValidationError{
+			Code:    "INVALID_IMAGE_FORMAT",
+			Message: "Only jpg, jpeg and png images are supported",
+		}
+	}
 }
 
 func parseSupportedOnlyQuery(r *http.Request) (bool, bool) {
