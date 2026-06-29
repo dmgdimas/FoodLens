@@ -9,6 +9,10 @@ type Nutrients struct {
 	Carbs    float64 `json:"carbs"`
 }
 
+func EstimateWeightByVolume(volumeCM3 float64, densityGPerCM3 float64) float64 {
+	return roundToOneDecimal(volumeCM3 * densityGPerCM3)
+}
+
 func CalculateByWeight(p product.Product, weightG float64) Nutrients {
 	ratio := weightG / 100
 

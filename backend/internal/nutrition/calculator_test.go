@@ -32,3 +32,11 @@ func TestCalculateByWeight(t *testing.T) {
 		t.Fatalf("expected carbs 19.6, got %.1f", result.Carbs)
 	}
 }
+
+func TestEstimateWeightByVolume(t *testing.T) {
+	result := EstimateWeightByVolume(150.5, 0.84)
+
+	if result != 126.4 {
+		t.Fatalf("expected weight 126.4, got %.1f", result)
+	}
+}
