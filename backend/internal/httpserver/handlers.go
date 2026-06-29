@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dmgdimas/FoodLens/backend/internal/ml"
 	"github.com/dmgdimas/FoodLens/backend/internal/nutrition"
 	"github.com/dmgdimas/FoodLens/backend/internal/product"
 )
@@ -39,6 +40,22 @@ type ProductShort struct {
 	MLClass string `json:"ml_class"`
 	NameRU  string `json:"name_ru"`
 	NameEN  string `json:"name_en"`
+}
+
+type AnalyzeResponse struct {
+	Status     string              `json:"status"`
+	Detections []DetectionResponse `json:"detections"`
+}
+
+type DetectionResponse struct {
+	Class              string              `json:"class"`
+	NameRU             string              `json:"name_ru"`
+	NameEN             string              `json:"name_en"`
+	Confidence         float64             `json:"confidence"`
+	BBox               ml.BBox             `json:"bbox"`
+	EstimatedVolumeCM3 float64             `json:"estimated_volume_cm3"`
+	EstimatedWeightG   float64             `json:"estimated_weight_g"`
+	Nutrients          nutrition.Nutrients `json:"nutrients"`
 }
 
 func (h *Handler) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +143,72 @@ func (h *Handler) calculateHandler(w http.ResponseWriter, r *http.Request) {
 		},
 		EstimatedWeightG: *request.WeightG,
 		Nutrients:        nutrients,
+	})
+}
+
+func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method is not allowed")
+		return
+	}
+
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_MULTIPART_FORM", "Request must be multipart/form-data")
+		return
+	}
+
+	file, fileHeader, err := r.FormFile("image")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "IMAGE_REQUIRED", "Image file is required")
+		return
+	}
+	defer file.Close()
+
+	mlResponse, err := h.mlClient.AnalyzeImage(r.Context(), file, fileHeader.Filename)
+	if err != nil {
+		h.log.Error("failed to analyze image with ML service", "error", err)
+		writeError(w, http.StatusBadGateway, "ML_SERVICE_UNAVAILABLE", "ML service is unavailable or returned invalid response")
+		return
+	}
+
+	detections := make([]DetectionResponse, 0, len(mlResponse.Detections))
+
+	for _, detection := range mlResponse.Detections {
+		foundProduct, err := h.products.GetByMLClass(r.Context(), detection.Class)
+		if err != nil {
+			if errors.Is(err, product.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "PRODUCT_NOT_SUPPORTED", "Detected product class is not supported by backend catalog")
+				return
+			}
+
+			h.log.Error("failed to get product by ml_class", "ml_class", detection.Class, "error", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to analyze image")
+			return
+		}
+
+		estimatedWeightG := nutrition.EstimateWeightByVolume(
+			detection.EstimatedVolumeCM3,
+			foundProduct.DensityGPerCM3,
+		)
+
+		nutrients := nutrition.CalculateByWeight(foundProduct, estimatedWeightG)
+
+		detections = append(detections, DetectionResponse{
+			Class:              detection.Class,
+			NameRU:             foundProduct.NameRU,
+			NameEN:             foundProduct.NameEN,
+			Confidence:         detection.Confidence,
+			BBox:               detection.BBox,
+			EstimatedVolumeCM3: detection.EstimatedVolumeCM3,
+			EstimatedWeightG:   estimatedWeightG,
+			Nutrients:          nutrients,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, AnalyzeResponse{
+		Status:     "success",
+		Detections: detections,
 	})
 }
 
