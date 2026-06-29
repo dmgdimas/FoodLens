@@ -10,6 +10,7 @@ import (
 	"github.com/dmgdimas/FoodLens/backend/internal/config"
 	"github.com/dmgdimas/FoodLens/backend/internal/database"
 	"github.com/dmgdimas/FoodLens/backend/internal/httpserver"
+	"github.com/dmgdimas/FoodLens/backend/internal/ml"
 	"github.com/dmgdimas/FoodLens/backend/internal/product"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -29,8 +30,9 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error)
 	}
 
 	productRepository := product.NewRepository(db)
+	mlClient := ml.NewClient(cfg.MLServiceURL)
 
-	router := httpserver.NewRouter(log, productRepository)
+	router := httpserver.NewRouter(log, productRepository, mlClient)
 
 	server := &http.Server{
 		Addr:              cfg.Addr(),
