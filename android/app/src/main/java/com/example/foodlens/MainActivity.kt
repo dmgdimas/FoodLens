@@ -12,11 +12,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.foodlens.ui.theme.FoodLensTheme
-
+import com.example.foodlens.di.DatabaseProvider
 import com.example.foodlens.ui.MainScreen
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DatabaseProvider.init(applicationContext)
         enableEdgeToEdge()
         setContent {
             FoodLensTheme {
