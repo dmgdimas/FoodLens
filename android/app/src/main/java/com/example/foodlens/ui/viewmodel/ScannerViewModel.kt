@@ -12,6 +12,8 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
+import com.example.foodlens.data.local.HistoryRecordEntity
+import com.example.foodlens.di.DatabaseProvider
 
 sealed class ScannerUiState {
     object Idle : ScannerUiState() // ждет фото
@@ -47,5 +49,21 @@ class ScannerViewModel : ViewModel() {
 
     fun resetState() {
         _uiState.value = ScannerUiState.Idle
+    }
+
+    fun saveToHistory(detection: com.example.foodlens.data.model.Detection) {
+        viewModelScope.launch {
+            val entity = HistoryRecordEntity(
+                foodName = detection.className,
+                weightGrams = detection.weightGrams,
+                calories = detection.nutrients.calories,
+                proteins = detection.nutrients.proteins,
+                fats = detection.nutrients.fats,
+                carbs = detection.nutrients.carbs,
+                imagePath = ""
+            )
+            DatabaseProvider.db.historyDao().insertRecord(entity)
+            resetState()
+        }
     }
 }

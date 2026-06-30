@@ -2,11 +2,15 @@ package com.example.foodlens.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.foodlens.camera.CameraCapture
@@ -25,10 +29,11 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
     Box(modifier = Modifier.fillMaxSize()) {
         when (uiState) {
             is ScannerUiState.Idle, is ScannerUiState.Error -> {
+
                 if (uiState is ScannerUiState.Error) {
-                    val errorMsg = (uiState as ScannerUiState.Error).message
+                    val message = (uiState as ScannerUiState.Error).message
                     LaunchedEffect(uiState) {
-                        Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                         viewModel.resetState()
                     }
                 }
@@ -40,46 +45,130 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
                             if (compressedFile != null) {
                                 viewModel.analyzeImage(compressedFile)
                             } else {
-                                Toast.makeText(context, "Ошибка сжатия", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Ошибка обработки изображения", Toast.LENGTH_SHORT).show()
                             }
                         }
                     },
-                    onError = { Toast.makeText(context, "Ошибка камеры", Toast.LENGTH_SHORT).show() }
+                    onError = { exc ->
+                        Toast.makeText(context, "Ошибка камеры: ${exc.message}", Toast.LENGTH_SHORT).show()
+                    }
                 )
             }
 
             is ScannerUiState.Loading -> {
                 Column(
                     modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Анализируем блюдо...")
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(64.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = "Нейросеть анализирует блюдо...",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
                 }
             }
 
             is ScannerUiState.Success -> {
-                val result = (uiState as ScannerUiState.Success).response
-                val detection = result.detections?.firstOrNull()
+                val response = (uiState as ScannerUiState.Success).response
+                val detection = response.detections?.firstOrNull()
 
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text("Блюдо: ${detection?.className ?: "Не распознано"}", style = MaterialTheme.typography.headlineMedium)
-                    Text("Вес: ~${detection?.weightGrams} г", style = MaterialTheme.typography.bodyLarge)
-                    Text("Калории: ${detection?.nutrients?.calories} ккал", style = MaterialTheme.typography.bodyLarge)
+                if (detection != null) {
+                    Card(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Результат анализа",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                            Text(
+                                text = detection.className.replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.headlineLarge,
+                                fontWeight = FontWeight.Bold
+                            )
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
 
-                    Button(onClick = { viewModel.resetState() }) {
-                        Text("Сделать новое фото")
+                            Text(
+                                text = "${detection.nutrients.calories.toInt()} ккал",
+                                style = MaterialTheme.typography.displaySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = "Примерный вес: ${detection.weightGrams.toInt()} г",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 16.dp),
+                                thickness = DividerDefaults.Thickness,
+                                color = DividerDefaults.color
+                            )
+
+                            // БЖУ
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                NutrientItem("Белки", detection.nutrients.proteins)
+                                NutrientItem("Жиры", detection.nutrients.fats)
+                                NutrientItem("Углев", detection.nutrients.carbs)
+                            }
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            Button(
+                                onClick = {
+                                    viewModel.saveToHistory(detection)
+                                    Toast.makeText(context, "Сохранено в дневник!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Добавить в дневник")
+                            }
+
+                            TextButton(
+                                onClick = { viewModel.resetState() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Переснять")
+                            }
+                        }
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Еда на фото не обнаружена")
+                            Button(onClick = { viewModel.resetState() }) {
+                                Text("Попробовать снова")
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun NutrientItem(label: String, value: Double) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = value.toInt().toString(), fontWeight = FontWeight.Bold)
+        Text(text = label, style = MaterialTheme.typography.labelSmall)
     }
 }
