@@ -13,16 +13,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.foodlens.camera.CameraCapture
+import com.example.foodlens.camera.ArCameraCapture
 import com.example.foodlens.ui.viewmodel.ScannerUiState
 import com.example.foodlens.ui.viewmodel.ScannerViewModel
-import com.example.foodlens.utils.ImageCompressor
-import kotlinx.coroutines.launch
 
 @Composable
 fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
 
     val uiState by viewModel.uiState.collectAsState()
 
@@ -38,19 +35,12 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
                     }
                 }
 
-                CameraCapture(
-                    onImageCaptured = { uri ->
-                        coroutineScope.launch {
-                            val compressedFile = ImageCompressor.compressWithLetterboxing(context, uri)
-                            if (compressedFile != null) {
-                                viewModel.analyzeImage(compressedFile)
-                            } else {
-                                Toast.makeText(context, "Ошибка обработки изображения", Toast.LENGTH_SHORT).show()
-                            }
-                        }
+                ArCameraCapture(
+                    onImagesCaptured = { rgbFile, depthFile, rgbWidth, depthWidth ->
+                        viewModel.analyzeImage(rgbFile, depthFile, rgbWidth, depthWidth)
                     },
-                    onError = { exc ->
-                        Toast.makeText(context, "Ошибка камеры: ${exc.message}", Toast.LENGTH_SHORT).show()
+                    onError = { errorMsg ->
+                        Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
                     }
                 )
             }
@@ -67,7 +57,7 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     Text(
-                        text = "Нейросеть анализирует блюдо...",
+                        text = "Анализируем 3D-модель блюда...",
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }
@@ -89,12 +79,12 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Результат анализа",
+                                text = "Результат 3D-анализа",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.secondary
                             )
                             Text(
-                                text = detection.className.replaceFirstChar { it.uppercase() },
+                                text = detection.nameRu.replaceFirstChar { it.uppercase() },
                                 style = MaterialTheme.typography.headlineLarge,
                                 fontWeight = FontWeight.Bold
                             )
@@ -108,7 +98,7 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
                                 fontWeight = FontWeight.Black
                             )
                             Text(
-                                text = "Примерный вес: ${detection.weightGrams.toInt()} г",
+                                text = "Расчетный вес: ${detection.weight.toInt()} г",
                                 style = MaterialTheme.typography.bodyMedium
                             )
 
@@ -130,6 +120,7 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
 
                             Spacer(modifier = Modifier.height(24.dp))
 
+                            // Кнопки управления
                             Button(
                                 onClick = {
                                     viewModel.saveToHistory(detection)
@@ -151,9 +142,11 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
                         }
                     }
                 } else {
+                    // Если сервер ответил, но ничего не нашел
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("Еда на фото не обнаружена")
+                            Spacer(modifier = Modifier.height(16.dp))
                             Button(onClick = { viewModel.resetState() }) {
                                 Text("Попробовать снова")
                             }
@@ -165,6 +158,7 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
     }
 }
 
+// Вспомогательный компонент для отображения БЖУ
 @Composable
 fun NutrientItem(label: String, value: Double) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
