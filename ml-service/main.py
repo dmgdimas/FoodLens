@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 import uvicorn
 import cv2
@@ -10,14 +12,14 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="FoodLens ML API with AR Depth Map Integration")
 
-@app.post("/predict")
-async def predict(
+@app.post("/internal/ml/analyze")
+async def analyze(
     image: UploadFile = File(...),
     depth_map: UploadFile = File(...),
     fx: float = Form(500.0),
     fy: float = Form(500.0),
-    cx: float = Form(None),
-    cy: float = Form(None)
+    cx: Optional[float] = Form(None),
+    cy: Optional[float] = Form(None)
 ):
     try:
         img_bytes = await image.read()
@@ -56,4 +58,4 @@ async def predict(
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=9000)

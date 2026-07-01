@@ -1,12 +1,20 @@
+import os
 import cv2
 import numpy as np
 from ultralytics import YOLO
-import math
 from pathlib import Path
+import logging
 
-# Абсолютный путь к модели
+logger = logging.getLogger(__name__)
+
+# Путь к модели: сначала из переменной окружения, затем fallback на локальный путь
 PROJECT_ROOT = Path(__file__).resolve().parent
-MODEL_PATH = PROJECT_ROOT / "runs" / "segment" / "food_segmentation_augmented-5" / "weights" / "best.pt"
+MODEL_PATH = Path(
+    os.environ.get(
+        "MODEL_PATH",
+        str(PROJECT_ROOT / "runs" / "segment" / "food_segmentation_augmented-5" / "weights" / "best.pt")
+    )
+)
 
 # Загружаем модель глобально
 model = None
@@ -38,28 +46,29 @@ def calculate_volume(mask: np.ndarray, depth_map: np.ndarray, intrinsics: dict) 
     
     border_depths = depth_map[border_mask > 0.5]
     if len(border_depths) > 0:
-        table_z = np.median(border_depths)
+        table_z = float(np.median(border_depths))
     else:
         mask_depths = depth_map[mask > 0.5]
-        table_z = np.max(mask_depths) if len(mask_depths) > 0 else 0
+        table_z = float(np.max(mask_depths)) if len(mask_depths) > 0 else 0.0
         
     if table_z <= 0:
         return 0.0
 
-    volume_cm3 = 0.0
-    ys, xs = np.where(mask > 0.5)
+    # Векторизованный расчёт объёма (вместо попиксельного Python-цикла)
+    mask_depths = depth_map[mask > 0.5]
     
-    for y, x in zip(ys, xs):
-        z = depth_map[y, x]
-        if z >= table_z:
-            continue
-            
-        # Интегрируем точный объем усеченной пирамиды (frustum) для данного пикселя
-        # V = \int_{z}^{table_z} (z'^2 / (fx*fy)) dz' = (table_z^3 - z^3) / (3 * fx * fy)
-        exact_column_volume = (table_z**3 - z**3) / (3.0 * fx * fy)
-        volume_cm3 += exact_column_volume
-            
-    return round(volume_cm3, 2)
+    # Отфильтровываем невалидные глубины (z <= 0) и пиксели на уровне стола или дальше
+    valid = (mask_depths > 0) & (mask_depths < table_z)
+    valid_depths = mask_depths[valid]
+    
+    if len(valid_depths) == 0:
+        return 0.0
+    
+    # Интегрируем объём усечённых пирамид (frustum) для всех пикселей разом
+    # V = Σ (table_z³ - z³) / (3 · fx · fy)
+    volume_cm3 = np.sum(table_z**3 - valid_depths**3) / (3.0 * fx * fy)
+    
+    return round(float(volume_cm3), 2)
 
 def process_inference(image: np.ndarray, depth_map: np.ndarray, intrinsics: dict):
     """
