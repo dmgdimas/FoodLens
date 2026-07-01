@@ -4,29 +4,31 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import java.util.concurrent.TimeUnit
 
 object ApiClient {
-    // временный базовый URL для тестирования
-    private const val BASE_URL = "http://10.0.2.2:8080"
+    private var currentUrl: String = ""
+    private var cachedService: BackendApi? = null
 
-    private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
-    }
-
-    private val okHttpClient = OkHttpClient.Builder()
-        .addInterceptor(loggingInterceptor)
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+    private val client = OkHttpClient.Builder()
+        .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY })
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .addHeader("ngrok-skip-browser-warning", "true")
+                .build()
+            chain.proceed(request)
+        }
         .build()
 
-    val retrofitService: BackendApi by lazy {
-        Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create()) // Парсер JSON
-            .build()
-            .create(BackendApi::class.java)
+    fun getService(baseUrl: String): BackendApi {
+        if (baseUrl != currentUrl || cachedService == null) {
+            currentUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+            cachedService = Retrofit.Builder()
+                .baseUrl(currentUrl)
+                .client(client)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
+                .create(BackendApi::class.java)
+        }
+        return cachedService!!
     }
 }

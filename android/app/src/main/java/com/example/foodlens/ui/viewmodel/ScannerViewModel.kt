@@ -1,28 +1,31 @@
 package com.example.foodlens.ui.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.foodlens.data.api.ApiClient
-import com.example.foodlens.data.model.AnalyzeResponse
+import com.example.foodlens.data.local.HistoryRecordEntity
+import com.example.foodlens.di.DatabaseProvider
+import com.example.foodlens.utils.PreferenceManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
-import com.example.foodlens.data.local.HistoryRecordEntity
-import com.example.foodlens.di.DatabaseProvider
 
 sealed class ScannerUiState {
-    object Idle : ScannerUiState() // ждет фото
-    object Loading : ScannerUiState() // идет запрос
-    data class Success(val response: AnalyzeResponse) : ScannerUiState() // получен ответ
-    data class Error(val message: String) : ScannerUiState() // ошибка сети
+    object Idle : ScannerUiState()
+    object Loading : ScannerUiState()
+    data class Success(val response: com.example.foodlens.data.model.AnalyzeResponse) : ScannerUiState()
+    data class Error(val message: String) : ScannerUiState()
 }
+class ScannerViewModel(application: Application) : AndroidViewModel(application) {
 
-class ScannerViewModel : ViewModel() {
+    private val prefManager = PreferenceManager(application)
 
     private val _uiState = MutableStateFlow<ScannerUiState>(ScannerUiState.Idle)
     val uiState: StateFlow<ScannerUiState> = _uiState.asStateFlow()
@@ -32,23 +35,20 @@ class ScannerViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
-                // подготовка файла
+                val baseUrl = prefManager.serverUrl.first()
+
+                val apiService = ApiClient.getService(baseUrl)
+
                 val requestFile = file.asRequestBody("image/jpeg".toMediaTypeOrNull())
                 val body = MultipartBody.Part.createFormData("file", file.name, requestFile)
 
-                val response = ApiClient.retrofitService.analyzeFoodImage(body)
-
+                val response = apiService.analyzeFoodImage(body)
                 _uiState.value = ScannerUiState.Success(response)
 
             } catch (e: Exception) {
-                e.printStackTrace()
-                _uiState.value = ScannerUiState.Error("Ошибка соединения с сервером: ${e.message}")
+                _uiState.value = ScannerUiState.Error("Ошибка: ${e.message}")
             }
         }
-    }
-
-    fun resetState() {
-        _uiState.value = ScannerUiState.Idle
     }
 
     fun saveToHistory(detection: com.example.foodlens.data.model.Detection) {
@@ -65,5 +65,9 @@ class ScannerViewModel : ViewModel() {
             DatabaseProvider.db.historyDao().insertRecord(entity)
             resetState()
         }
+    }
+
+    fun resetState() {
+        _uiState.value = ScannerUiState.Idle
     }
 }
