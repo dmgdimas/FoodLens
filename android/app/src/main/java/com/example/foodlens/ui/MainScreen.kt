@@ -15,9 +15,11 @@ import com.example.foodlens.ui.screens.SettingsScreen
 @Composable
 fun MainScreen() {
     val navController = rememberNavController()
+    val snackbarHostState = remember { SnackbarHostState() }
     val items = listOf(Screen.Camera, Screen.History, Screen.Settings)
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             NavigationBar {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -45,9 +47,15 @@ fun MainScreen() {
             startDestination = Screen.Camera.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.Camera.route) { CameraScreen() }
-            composable(Screen.History.route) { HistoryScreen() }
-            composable(Screen.Settings.route) { SettingsScreen() }
+            composable(Screen.Camera.route) {
+                CameraScreen()
+            }
+            composable(Screen.History.route) {
+                HistoryScreen()
+            }
+            composable(Screen.Settings.route) {
+                SettingsScreen()
+            }
         }
     }
 }

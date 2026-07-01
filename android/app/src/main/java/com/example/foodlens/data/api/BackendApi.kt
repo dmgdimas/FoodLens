@@ -6,9 +6,11 @@ import retrofit2.http.*
 
 interface BackendApi {
     @Multipart
-    @POST("/api/v1/analyze")
+    @POST("api/v1/analyze")
     suspend fun analyzeFoodImage(
-        @Part file: MultipartBody.Part
+        @Part image: MultipartBody.Part,
+        @Part depth: MultipartBody.Part,
+        @Part("metadata") metadata: RequestBody
     ): AnalyzeResponse
 
     @GET("/health")
