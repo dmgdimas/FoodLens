@@ -5,6 +5,9 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+# Кеш HuggingFace моделей внутри контейнера
+ENV HF_HOME=/app/.cache/huggingface
+
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt

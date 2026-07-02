@@ -7,16 +7,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Путь к модели: сначала из переменной окружения, затем fallback на локальный путь
+# Путь к модели
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODEL_PATH = Path(
     os.environ.get(
         "MODEL_PATH",
-        str(PROJECT_ROOT / "runs" / "segment" / "food_segmentation_augmented-5" / "weights" / "best.pt")
+        str(PROJECT_ROOT / "runs" / "detect" / "food_detection_augmented-3" / "weights" / "best.pt")
     )
 )
 
-# Загружаем модель глобально
 model = None
 if MODEL_PATH.exists():
     model = YOLO(str(MODEL_PATH))
@@ -29,80 +28,95 @@ def get_model():
         model = YOLO(str(MODEL_PATH))
     return model
 
-def calculate_volume(mask: np.ndarray, depth_map: np.ndarray, intrinsics: dict) -> float:
-    """
-    Вычисляет физический объем объекта в куб. см на основе карты глубин и маски.
-    
-    mask: бинарная маска (H, W) со значениями 0 и 1 (размер совпадает с depth_map)
-    depth_map: карта глубин (H, W) со значениями глубины (предполагаем, что значения уже в сантиметрах)
-    intrinsics: dict с fx, fy, cx, cy
-    """
-    fx = float(intrinsics.get("fx", 500.0))
-    fy = float(intrinsics.get("fy", 500.0))
-    
-    kernel = np.ones((15, 15), np.uint8)
-    dilated_mask = cv2.dilate(mask.astype(np.uint8), kernel, iterations=1)
-    border_mask = dilated_mask - mask
-    
-    border_depths = depth_map[border_mask > 0.5]
-    if len(border_depths) > 0:
-        table_z = float(np.median(border_depths))
-    else:
-        mask_depths = depth_map[mask > 0.5]
-        table_z = float(np.max(mask_depths)) if len(mask_depths) > 0 else 0.0
-        
-    if table_z <= 0:
-        return 0.0
+HARDCODED_VOLUMES = {
+    "almond": 2.0,
+    "apple": 150.0,
+    "apricot": 35.0,
+    "artichoke": 200.0,
+    "asparagus": 15.0,
+    "avocado": 170.0,
+    "banana": 120.0,
+    "bean curd/tofu": 250.0,
+    "bell pepper/capsicum": 160.0,
+    "blackberry": 5.0,
+    "blueberry": 1.0,
+    "broccoli": 200.0,
+    "brussels sprouts": 15.0,
+    "cantaloup/cantaloupe": 1000.0,
+    "carrot": 80.0,
+    "cauliflower": 300.0,
+    "cayenne/cayenne spice/cayenne pepper/cayenne pepper spice/red pepper/red pepper": 5.0,
+    "celery": 40.0,
+    "cherry": 8.0,
+    "chickpea/garbanzo": 1.0,
+    "chili/chili vegetable/chili pepper/chili pepper vegetable/chilli/chilli vegetable/chilly/chilly": 10.0,
+    "clementine": 60.0,
+    "coconut/cocoanut": 800.0,
+    "edible corn/corn/maize": 150.0,
+    "cucumber/cuke": 250.0,
+    "date/date fruit": 10.0,
+    "eggplant/aubergine": 350.0,
+    "fig/fig fruit": 40.0,
+    "garlic/ail": 30.0,
+    "ginger/gingerroot": 50.0,
+    "Strawberry": 15.0,
+    "gourd": 500.0,
+    "grape": 5.0,
+    "green bean": 5.0,
+    "green onion/spring onion/scallion": 10.0,
+    "Tomato": 130.0,
+    "kiwi fruit": 75.0,
+    "lemon": 100.0,
+    "lettuce": 300.0,
+    "lime": 50.0,
+    "mandarin orange": 80.0,
+    "melon": 1500.0,
+    "mushroom": 20.0,
+    "onion": 110.0,
+    "orange/orange fruit": 140.0,
+    "papaya": 400.0,
+    "pea/pea food": 1.0,
+    "peach": 130.0,
+    "pear": 140.0,
+    "persimmon": 120.0,
+    "pickle": 50.0,
+    "pineapple": 1000.0,
+    "potato": 170.0,
+    "prune": 20.0,
+    "pumpkin": 3000.0,
+    "radish/daikon": 50.0,
+    "raspberry": 3.0,
+    "strawberry": 15.0,
+    "sweet potato": 200.0,
+    "tomato": 130.0,
+    "turnip": 150.0,
+    "watermelon": 4000.0,
+    "zucchini/courgette": 300.0,
+}
 
-    # Векторизованный расчёт объёма (вместо попиксельного Python-цикла)
-    mask_depths = depth_map[mask > 0.5]
-    
-    # Отфильтровываем невалидные глубины (z <= 0) и пиксели на уровне стола или дальше
-    valid = (mask_depths > 0) & (mask_depths < table_z)
-    valid_depths = mask_depths[valid]
-    
-    if len(valid_depths) == 0:
-        return 0.0
-    
-    # Интегрируем объём усечённых пирамид (frustum) для всех пикселей разом
-    # V = Σ (table_z³ - z³) / (3 · fx · fy)
-    volume_cm3 = np.sum(table_z**3 - valid_depths**3) / (3.0 * fx * fy)
-    
-    return round(float(volume_cm3), 2)
+def get_volume_for_class(class_name: str) -> float:
+    return HARDCODED_VOLUMES.get(class_name, 0.0)
 
-def process_inference(image: np.ndarray, depth_map: np.ndarray, intrinsics: dict):
-    """
-    Прогоняет картинку через YOLO-Seg, считает объем по Depth Map и возвращает данные.
-    Ожидает, что image и depth_map имеют одинаковое разрешение.
-    """
+def process_inference(image: np.ndarray, intrinsics: dict = None):
     m = get_model()
     
+    # YOLO inference (detection)
     results = m(image, imgsz=640)
     
     output_data = []
-    
     for result in results:
-        if result.masks is None or result.boxes is None:
+        if result.boxes is None:
             continue
             
         boxes = result.boxes
         names = m.names
-        
-        polygons = result.masks.xy 
         
         for i in range(len(boxes)):
             class_id = int(boxes.cls[i].item())
             class_name = names[class_id]
             confidence = float(boxes.conf[i].item())
             
-            poly = polygons[i]
-            if len(poly) < 3:
-                continue
-                
-            mask = np.zeros(depth_map.shape[:2], dtype=np.uint8)
-            cv2.fillPoly(mask, [poly.astype(np.int32)], 1)
-            
-            volume_cm3 = calculate_volume(mask, depth_map, intrinsics)
+            volume_cm3 = get_volume_for_class(class_name)
             
             output_data.append({
                 "class": class_name,

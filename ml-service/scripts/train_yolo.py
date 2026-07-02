@@ -1,14 +1,16 @@
 """
-Скрипт для обучения модели YOLOv8-seg на датасете продуктов.
+Скрипт для обучения модели YOLOv8 на датасете продуктов (детекция).
 """
 
-from ultralytics import YOLO
+from ultralytics import YOLO, settings
 import os
 from pathlib import Path
 
-# Корневая папка проекта
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_YAML_PATH = PROJECT_ROOT / "dataset" / "data.yaml"
+DATA_YAML_PATH = PROJECT_ROOT / "dataset" / "LVIS_Fruits_And_Vegetables" / "data.yaml"
+
+settings.update({'datasets_dir': str(PROJECT_ROOT / "dataset")})
 
 def main():
     print(f"Используем data.yaml: {DATA_YAML_PATH}")
@@ -16,11 +18,11 @@ def main():
         print("Ошибка: data.yaml не найден!")
         return
 
-    # Загружаем базовую модель для сегментации (самую легкую)
-    model = YOLO("yolov8s-seg.pt")
+    # Загрузка базовой модели
+    model = YOLO("yolov8n.pt")
 
     # Параметры обучения
-    epochs = 50  # Увеличено для полноценного обучения (было 2)
+    epochs = 80
     imgsz = 640
     batch_size = 16
 
@@ -31,20 +33,25 @@ def main():
         epochs=epochs,
         imgsz=imgsz,
         batch=batch_size,
-        name="food_segmentation_augmented",
-        project=str(PROJECT_ROOT / "runs" / "segment"),
+        name="food_detection_augmented",
+        project=str(PROJECT_ROOT / "runs" / "detect"),
         device="0",  # Использование CUDA
         
         degrees=15.0,
         hsv_s=0.5,
         hsv_v=0.4,
-        copy_paste=0.3, 
-        mixup=0.2,
+        copy_paste=0.0,
+        mixup=0.0,
         mosaic=1.0,
+        flipud=0.3,
+        close_mosaic=10,
+        patience=20,
+        hsv_h=0.015,
         verbose=True
+
     )
 
-    print("Обучение завершено. Результаты сохранены в runs/segment/food_segmentation_test")
+    print("Обучение завершено. Результаты сохранены в runs/detect/food_detection_augmented")
 
 if __name__ == "__main__":
     main()
