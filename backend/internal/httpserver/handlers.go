@@ -154,20 +154,21 @@ func (h *Handler) calculateHandler(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not allowed")
+		w.Header().Set("Allow", http.MethodPost)
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method is not allowed")
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxImageSizeBytes)
 
 	if err := r.ParseMultipartForm(maxImageSizeBytes); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_MULTIPART_FORM", "failed to parse multipart form")
+		writeError(w, http.StatusBadRequest, "INVALID_MULTIPART_FORM", "Failed to parse multipart form")
 		return
 	}
 
 	file, fileHeader, err := r.FormFile("image")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "IMAGE_REQUIRED", "image file is required")
+		writeError(w, http.StatusBadRequest, "IMAGE_REQUIRED", "Image file is required")
 		return
 	}
 	defer file.Close()
@@ -180,56 +181,71 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	mlResponse, err := h.mlClient.AnalyzeImage(r.Context(), file, fileHeader.Filename)
 	if err != nil {
 		h.log.Error("failed to analyze image with ML service", "error", err)
-		writeError(w, http.StatusBadGateway, "ML_SERVICE_UNAVAILABLE", "failed to analyze image")
+		writeError(w, http.StatusBadGateway, "ML_SERVICE_UNAVAILABLE", "Failed to analyze image")
 		return
 	}
 
-	mlClass := strings.ToLower(strings.TrimSpace(mlResponse.Class))
-	if mlClass == "" {
-		writeError(w, http.StatusBadGateway, "INVALID_ML_RESPONSE", "ML service returned empty class")
+	if !mlResponse.Success {
+		writeError(w, http.StatusBadGateway, "INVALID_ML_RESPONSE", "ML service returned unsuccessful response")
 		return
 	}
 
-	if mlResponse.VolumeCM3 <= 0 {
-		writeError(w, http.StatusBadGateway, "INVALID_ML_RESPONSE", "ML service returned invalid volume")
+	if len(mlResponse.Predictions) == 0 {
+		writeJSON(w, http.StatusOK, AnalyzeResponse{
+			Status:     "success",
+			Detections: []DetectionResponse{},
+		})
 		return
 	}
 
-	productItem, err := h.products.GetByMLClass(r.Context(), mlClass)
-	if err != nil {
-		if errors.Is(err, product.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "PRODUCT_NOT_SUPPORTED", "product is not supported")
+	detections := make([]DetectionResponse, 0, len(mlResponse.Predictions))
+
+	for _, prediction := range mlResponse.Predictions {
+		mlClass := strings.ToLower(strings.TrimSpace(prediction.Class))
+		if mlClass == "" {
+			writeError(w, http.StatusBadGateway, "INVALID_ML_RESPONSE", "ML service returned empty class")
 			return
 		}
 
-		h.log.Error("failed to get product by ML class", "error", err, "ml_class", mlClass)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get product")
-		return
+		if prediction.VolumeCM3 <= 0 {
+			writeError(w, http.StatusBadGateway, "INVALID_ML_RESPONSE", "ML service returned invalid volume")
+			return
+		}
+
+		productItem, err := h.products.GetByMLClass(r.Context(), mlClass)
+		if err != nil {
+			if errors.Is(err, product.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "PRODUCT_NOT_SUPPORTED", "Product is not supported by backend catalog")
+				return
+			}
+
+			h.log.Error("failed to get product by ML class", "error", err, "ml_class", mlClass)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get product")
+			return
+		}
+
+		estimatedWeightG := nutrition.EstimateWeightByVolume(
+			prediction.VolumeCM3,
+			productItem.DensityGPerCM3,
+		)
+
+		nutrients := nutrition.CalculateByWeight(productItem, estimatedWeightG)
+
+		detections = append(detections, DetectionResponse{
+			Class:              productItem.MLClass,
+			NameRU:             productItem.NameRU,
+			NameEN:             productItem.NameEN,
+			Confidence:         prediction.Confidence,
+			EstimatedVolumeCM3: prediction.VolumeCM3,
+			EstimatedWeightG:   estimatedWeightG,
+			Nutrients:          nutrients,
+		})
 	}
 
-	estimatedWeightG := nutrition.EstimateWeightByVolume(
-		mlResponse.VolumeCM3,
-		productItem.DensityGPerCM3,
-	)
-
-	nutrients := nutrition.CalculateByWeight(productItem, estimatedWeightG)
-
-	response := AnalyzeResponse{
-		Status: "success",
-		Detections: []DetectionResponse{
-			{
-				Class:              productItem.MLClass,
-				NameRU:             productItem.NameRU,
-				NameEN:             productItem.NameEN,
-				Confidence:         mlResponse.Confidence,
-				EstimatedVolumeCM3: mlResponse.VolumeCM3,
-				EstimatedWeightG:   estimatedWeightG,
-				Nutrients:          nutrients,
-			},
-		},
-	}
-
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, AnalyzeResponse{
+		Status:     "success",
+		Detections: detections,
+	})
 }
 
 func validateCalculateRequest(request CalculateRequest) *ValidationError {
