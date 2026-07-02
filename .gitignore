@@ -7,10 +7,12 @@ android/*.apk
 backend/bin/
 backend/*.exe
 
-ml_service/__pycache__/
-ml_service/*.pyc
-ml_service/.venv/
-ml_service/weights/*.tmp
+ml-service/__pycache__/
+ml-service/*.pyc
+ml-service/.venv/
+ml-service/weights/
+ml-service/runs/
+ml-service/.cache/
 
 *.db
 .env
