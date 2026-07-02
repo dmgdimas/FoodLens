@@ -34,13 +34,29 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = ScannerUiState.Loading
         viewModelScope.launch {
             try {
-                val api = ApiClient.getService(prefManager.serverUrl.first())
-                val body = MultipartBody.Part.createFormData("image", file.name, file.asRequestBody("image/jpeg".toMediaTypeOrNull()))
+                val baseUrl = prefManager.serverUrl.first()
+                if (baseUrl.isEmpty()) {
+                    _uiState.value = ScannerUiState.Error("Введите адрес сервера в настройках")
+                    return@launch
+                }
 
-                val response = api.analyzeFoodImage(body)
+                val apiService = ApiClient.getService(baseUrl)
+                val requestFile = file.asRequestBody("image/jpeg".toMediaTypeOrNull())
+                val body = MultipartBody.Part.createFormData("image", file.name, requestFile)
+
+                val response = apiService.analyzeFoodImage(body)
                 _uiState.value = ScannerUiState.Success(response)
+
+            } catch (e: retrofit2.HttpException) {
+                val message = when (e.code()) {
+                    400 -> "Некорректное изображение или запрос"
+                    404 -> "Продукт пока не поддерживается каталогом"
+                    502 -> "ML-сервис бэкенда временно недоступен"
+                    else -> "Ошибка сервера: ${e.code()}"
+                }
+                _uiState.value = ScannerUiState.Error(message)
             } catch (e: Exception) {
-                _uiState.value = ScannerUiState.Error(e.message ?: "Ошибка")
+                _uiState.value = ScannerUiState.Error(e.message ?: "Неизвестная ошибка сети")
             }
         }
     }

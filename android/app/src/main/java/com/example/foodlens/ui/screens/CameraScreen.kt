@@ -28,7 +28,6 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
     val coroutineScope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsState()
 
-    // Лаунчер для выбора фото из галереи
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
@@ -56,13 +55,15 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
                     }
                 }
 
-                // Камера (CameraX)
                 CameraCapture(
-                    onImageCaptured = { file -> viewModel.analyzeImage(file) },
-                    onError = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+                    onImageCaptured = { file ->
+                        viewModel.analyzeImage(file)
+                    },
+                    onError = { errorMsg ->
+                        Toast.makeText(context, "Ошибка камеры: $errorMsg", Toast.LENGTH_SHORT).show()
+                    }
                 )
 
-                // Кнопка галереи
                 IconButton(
                     onClick = {
                         galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
