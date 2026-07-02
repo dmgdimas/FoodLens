@@ -8,9 +8,7 @@ interface BackendApi {
     @Multipart
     @POST("api/v1/analyze")
     suspend fun analyzeFoodImage(
-        @Part image: MultipartBody.Part,
-        @Part depth: MultipartBody.Part,
-        @Part("metadata") metadata: RequestBody
+        @Part image: MultipartBody.Part
     ): AnalyzeResponse
 
     @GET("/health")
