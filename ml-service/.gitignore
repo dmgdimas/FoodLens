@@ -1,0 +1,26 @@
+# OpenSpec
+.agent/
+openspec/
+
+
+dataset/
+datasets/
+data/
+*.jpg
+*.png
+*.jpeg
+
+
+*.pt
+*.onnx
+
+
+runs/
+yolov8n.pt
+
+
+__pycache__/
+*.pyc
+venv/
+.env/
+.venv/
