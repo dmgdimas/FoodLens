@@ -77,9 +77,5 @@ func (c *Client) AnalyzeImage(ctx context.Context, image io.Reader, filename str
 		return AnalyzeResponse{}, fmt.Errorf("%w: invalid response body", ErrServiceUnavailable)
 	}
 
-	if analyzeResponse.Status != "success" {
-		return AnalyzeResponse{}, fmt.Errorf("%w: invalid response status", ErrServiceUnavailable)
-	}
-
 	return analyzeResponse, nil
 }
