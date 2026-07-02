@@ -92,26 +92,60 @@ fun CameraScreen(viewModel: ScannerViewModel = viewModel()) {
 
             is ScannerUiState.Success -> {
                 val response = (uiState as ScannerUiState.Success).response
-                val detection = response.detections?.firstOrNull()
+                val detections = response.detections
+                val detection = detections?.firstOrNull()
 
-                if (detection != null) {
+                if (detections != null && detection != null && !detection.nameRu.isNullOrEmpty()) {
                     Card(modifier = Modifier.align(Alignment.Center).padding(24.dp)) {
-                        Column(Modifier.padding(24.dp),
-                            Alignment.CenterHorizontally as Arrangement.Vertical
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(detection.nameRu.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                            Text("Калории: ${detection.nutrients.calories.toInt()} ккал", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
-                            Text("Вес: ~${detection.weight.toInt()} г", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = (detection.nameRu ?: "Неизвестный продукт").replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.headlineLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Калории: ${(detection.nutrients?.calories ?: 0.0).toInt()} ккал",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Вес: ~${(detection.weight ?: 0.0).toInt()} г",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
 
-                            Spacer(Modifier.height(24.dp))
+                            Spacer(modifier = Modifier.height(24.dp))
 
-                            Button(onClick = { viewModel.saveToHistory(detection); viewModel.resetState() }, modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = {
+                                    viewModel.saveToHistory(detection)
+                                    viewModel.resetState()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 Text("Добавить в дневник")
                             }
                             TextButton(onClick = { viewModel.resetState() }, modifier = Modifier.fillMaxWidth()) {
                                 Icon(Icons.Default.Refresh, null)
                                 Spacer(Modifier.width(8.dp))
                                 Text("Переснять")
+                            }
+                        }
+                    }
+                } else {
+                    Card(modifier = Modifier.align(Alignment.Center).padding(24.dp)) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Продукт не найден", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(8.dp))
+                            Text("Попробуйте сделать другое фото")
+                            Spacer(Modifier.height(16.dp))
+                            Button(onClick = { viewModel.resetState() }) {
+                                Text("Повторить")
                             }
                         }
                     }

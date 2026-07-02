@@ -64,12 +64,12 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     fun saveToHistory(detection: com.example.foodlens.data.model.Detection) {
         viewModelScope.launch {
             val entity = HistoryRecordEntity(
-                foodName = detection.nameRu,
-                weightGrams = detection.weight,
-                calories = detection.nutrients.calories,
-                proteins = detection.nutrients.proteins,
-                fats = detection.nutrients.fats,
-                carbs = detection.nutrients.carbs,
+                foodName = detection.nameRu ?: "Неизвестный продукт",
+                weightGrams = detection.weight ?: 0.0,
+                calories = detection.nutrients?.calories ?: 0.0,
+                proteins = detection.nutrients?.proteins ?: 0.0,
+                fats = detection.nutrients?.fats ?: 0.0,
+                carbs = detection.nutrients?.carbs ?: 0.0,
                 imagePath = ""
             )
             DatabaseProvider.db.historyDao().insertRecord(entity)
