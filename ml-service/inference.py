@@ -9,12 +9,15 @@ logger = logging.getLogger(__name__)
 
 # Путь к модели
 PROJECT_ROOT = Path(__file__).resolve().parent
-MODEL_PATH = Path(
-    os.environ.get(
-        "MODEL_PATH",
-        str(PROJECT_ROOT / "runs" / "detect" / "food_detection_augmented-3" / "weights" / "best.pt")
-    )
-)
+
+# Получаем значение из переменной окружения.
+# Если её нет, берем путь относительно PROJECT_ROOT.
+env_model_path = os.environ.get("MODEL_PATH")
+
+if env_model_path:
+    MODEL_PATH = Path(env_model_path)
+else:
+    MODEL_PATH = PROJECT_ROOT / "best.pt"
 
 model = None
 if MODEL_PATH.exists():
