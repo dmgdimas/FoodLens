@@ -3,6 +3,7 @@ package product
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -85,6 +86,8 @@ func (r *Repository) GetAll(ctx context.Context, supportedOnly bool) ([]Product,
 }
 
 func (r *Repository) GetByMLClass(ctx context.Context, mlClass string) (Product, error) {
+	mlClass = strings.ToLower(strings.TrimSpace(mlClass))
+
 	const query = `
 		SELECT
 			id,
@@ -99,8 +102,11 @@ func (r *Repository) GetByMLClass(ctx context.Context, mlClass string) (Product,
 			carbs_per_100g,
 			is_supported
 		FROM products
-		WHERE ml_class = $1
-		  AND is_supported = TRUE
+		WHERE is_supported = TRUE
+		  AND (
+			  ml_class = $1
+			  OR $1 = ANY(aliases)
+		  )
 		LIMIT 1
 	`
 
